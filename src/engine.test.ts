@@ -83,7 +83,7 @@ describe('sorting engine', () => {
     expect(selectTile(game, { kind: 'column', column: 1, row: 1 })).toBe(game)
   })
 
-  it('treats a matching-lane shuffle with no unlock as a dead end', () => {
+  it('keeps matching-lane staging moves playable', () => {
     const tile = (type: Tile['type'], hidden = false): Tile => ({ id: `${type}-${Math.random()}`, type, hidden })
     const full = (type: Tile['type']) => Array.from({ length: 7 }, () => tile(type))
     const columns = [
@@ -93,7 +93,7 @@ describe('sorting engine', () => {
       [null, tile('hammer'), tile('hammer'), tile('mushroom'), tile('tomato', true), tile('mushroom'), tile('tomato', true)],
     ]
     const state: GameState = { level: 5, columns, columnTypes: Array(9).fill(null), tray: [tile('barrel'), tile('barrel')], reserveAdds: 0, selected: [], moveCount: 0, revealedCount: 0, status: 'playing' }
-    expect(hasLegalMove(state)).toBe(false)
+    expect(hasLegalMove(state)).toBe(true)
   })
 
   it('keeps a full exposed matching group playable after a reveal', () => {

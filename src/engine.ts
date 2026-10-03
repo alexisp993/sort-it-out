@@ -223,22 +223,9 @@ export function hasLegalMove(state: GameState): boolean {
       const selected = Array.from({ length: length + 1 }, (_, offset) => ({ kind: 'column' as const, column: sourceColumn, row: first + offset }))
       const candidateState = { ...state, selected }
       if (selected.length === 1 && state.tray.some((item) => !item)) return true
-      return state.columns.some((_, targetColumn) => canMoveToColumn(candidateState, targetColumn) && isProgressMove(candidateState, sourceColumn, targetColumn))
+      return state.columns.some((_, targetColumn) => canMoveToColumn(candidateState, targetColumn))
     }).some(Boolean)
   })
-}
-
-function isProgressMove(state: GameState, sourceColumn: number, targetColumn: number): boolean {
-  // ponytail: classify only unlocking/completing moves; a full solver can replace this if levels need deeper staging.
-  const source = state.columns[sourceColumn].map((item, row) => state.selected.some((entry) => entry.kind === 'column' && entry.column === sourceColumn && entry.row === row) ? null : item)
-  if (source.every((item) => !item) || firstHiddenRow(source) >= 0) return true
-  const target = state.columns[targetColumn]
-  if (target.every((item) => !item)) return true
-  const selected = state.selected.map((entry) => getSelectedTile(state, entry)).filter((item): item is Tile => Boolean(item))
-  const filled = target.map((item) => item)
-  const targetRows = filled.flatMap((item, row) => item === null ? [row] : []).slice(-selected.length).reverse()
-  selected.forEach((item, index) => { filled[targetRows[index]] = item })
-  return filled.every((item) => item && !item.hidden && item.type === selected[0]?.type)
 }
 
 function finishMove(state: GameState, columns: GameState['columns'], tray: GameState['tray']): GameState {
