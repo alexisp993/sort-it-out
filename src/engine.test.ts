@@ -164,7 +164,7 @@ describe('sorting engine', () => {
     game = selectTile(game, { kind: 'column', column: 2, row: 0 })
     expect(canMoveToColumn(game, 3)).toBe(true)
     game = moveSelectedToColumn(game, 3)
-    expect(game.columns[3][4]?.type).toBe('tomato')
+    expect(game.columns[3][0]?.type).toBe('tomato')
   })
 
   it('blocks staging on a different visible tile type', () => {
