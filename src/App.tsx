@@ -157,7 +157,7 @@ export default function App() {
   }, [game.status, game.level, game.moveCount, seconds, resetCount])
 
   useEffect(() => {
-    if (game.status === 'playing' && !game.selected.length && !hasLegalMove(game)) setGame({ ...game, status: 'no-legal-move' })
+    if (game.status === 'playing' && !hasLegalMove(game)) setGame({ ...game, status: 'no-legal-move' })
   }, [game])
 
   const bestStars = bestScores[game.level] ?? 0
