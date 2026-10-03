@@ -181,11 +181,14 @@ export function canSelectTile(state: GameState, selection: Selection): boolean {
   const column = state.columns[selection.column]
   const item = column?.[selection.row]
   if (!column || !item || item.hidden) return false
+  if (state.selected.some((entry) => sameSelection(entry, selection))) return true
   const firstOccupied = column.findIndex(Boolean)
   if (firstOccupied < 0 || selection.row < firstOccupied) return false
   const firstSelected = state.selected.find((entry) => entry.kind === 'column' && entry.column === selection.column)
   const firstSelectedTile = firstSelected ? getSelectedTile(state, firstSelected) : null
+  if (!firstSelected && selection.row !== firstOccupied) return false
   if (firstSelectedTile && firstSelectedTile.type !== item.type) return false
+  if (firstSelected && selection.row !== firstOccupied + state.selected.filter((entry) => entry.kind === 'column' && entry.column === selection.column).length) return false
   return column.slice(firstOccupied, selection.row).every((candidate, offset) => candidate && state.selected.some((entry) => entry.kind === 'column' && entry.column === selection.column && entry.row === firstOccupied + offset))
 }
 
