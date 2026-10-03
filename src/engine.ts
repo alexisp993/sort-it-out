@@ -226,9 +226,29 @@ export function hasLegalMove(state: GameState): boolean {
       const selected = Array.from({ length: length + 1 }, (_, offset) => ({ kind: 'column' as const, column: sourceColumn, row: first + offset }))
       const candidateState = { ...state, selected }
       if (selected.length === 1 && state.tray.some((item) => !item)) return true
-      return state.columns.some((_, targetColumn) => canMoveToColumn(candidateState, targetColumn))
+      return state.columns.some((_, targetColumn) => canMoveToColumn(candidateState, targetColumn) && isProgressMove(candidateState, sourceColumn, targetColumn))
     }).some(Boolean)
   })
+}
+
+function isProgressMove(state: GameState, sourceColumn: number, targetColumn: number): boolean {
+  const columns = state.columns.map((column) => [...column])
+  const tray = [...state.tray]
+  const items = state.selected.map((selection) => getSelectedTile(state, selection)).filter((item): item is Tile => Boolean(item))
+  state.selected.forEach((selection) => {
+    if (selection.kind === 'column') columns[selection.column][selection.row] = null
+  })
+  const targetRows: number[] = []
+  for (let row = columns[targetColumn].length - 1; row >= 0 && targetRows.length < items.length; row -= 1) {
+    if (columns[targetColumn][row] === null) targetRows.push(row)
+  }
+  items.forEach((item, index) => { columns[targetColumn][targetRows[index]] = item })
+  const sourceBefore = state.columns[sourceColumn].find((item): item is Tile => Boolean(item))
+  const sourceAfter = columns[sourceColumn].find((item): item is Tile => Boolean(item))
+  if (!sourceAfter || !sourceBefore || sourceAfter.type !== sourceBefore.type || sourceAfter.hidden !== sourceBefore.hidden) return true
+  if (state.columns[targetColumn].every((item) => !item)) return true
+  const complete = columns[targetColumn].every((item) => item && !item.hidden && item.type === items[0]?.type)
+  return complete
 }
 
 function finishMove(state: GameState, columns: GameState['columns'], tray: GameState['tray']): GameState {

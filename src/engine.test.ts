@@ -96,6 +96,32 @@ describe('sorting engine', () => {
     expect(hasLegalMove(state)).toBe(true)
   })
 
+  it('rejects a same-type shuffle that cannot expose or complete anything', () => {
+    const tile = (type: Tile['type'], hidden = false): Tile => ({ id: `${type}-${Math.random()}`, type, hidden })
+    const stack = (type: Tile['type']) => Array.from({ length: 7 }, () => tile(type))
+    const state: GameState = {
+      level: 5,
+      columns: [
+        [null, ...Array.from({ length: 6 }, () => tile('pineapple'))],
+        [...Array.from({ length: 5 }, () => tile('barrel')), tile('tomato', true), tile('tomato', true)],
+        [...Array.from({ length: 5 }, () => tile('fire')), tile('pumpkin'), tile('mushroom')],
+        [null, null, ...Array.from({ length: 5 }, () => tile('mushroom'))],
+        [null, ...Array.from({ length: 4 }, () => tile('pumpkin')), tile('blueberry'), tile('blueberry')],
+        [null, ...Array.from({ length: 6 }, () => tile('blueberry'))],
+        [null, null, null, null, tile('barrel'), tile('grapes'), tile('tomato', true)],
+        [tile('grapes'), tile('grapes'), tile('grapes'), tile('grapes'), tile('tomato', true), tile('fire'), tile('grapes')],
+      ],
+      columnTypes: Array(9).fill(null),
+      tray: [tile('fire'), tile('tomato')],
+      reserveAdds: 0,
+      selected: [],
+      moveCount: 0,
+      revealedCount: 0,
+      status: 'playing',
+    }
+    expect(hasLegalMove(state)).toBe(false)
+  })
+
   it('keeps a full exposed matching group playable after a reveal', () => {
     const tile = (type: Tile['type'], hidden = false): Tile => ({ id: `${type}-${Math.random()}`, type, hidden })
     const full = (type: Tile['type']) => Array.from({ length: 7 }, () => tile(type))
