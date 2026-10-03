@@ -34,7 +34,7 @@ h1 { margin: 0; font-size: clamp(23px, 4vw, 34px); line-height: .95; letter-spac
 .icon-button { width: 42px; height: 42px; border-radius: 12px; border: 1px solid rgba(78,76,69,.16); color: var(--ink); background: rgba(255,255,255,.66); box-shadow: 0 4px 10px rgba(70,60,42,.08); cursor: pointer; font-size: 19px; font-weight: 900; }
 .icon-button:active, .game-footer button:active, .primary-button:active { transform: translateY(1px); }
 
-.score-row { max-width: 720px; margin: 0 auto 14px; display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid rgba(67,65,58,.14); border-radius: 14px; background: rgba(255,255,255,.58); overflow: hidden; }
+.score-row { max-width: 720px; margin: 0 auto 14px; display: grid; grid-template-columns: repeat(5, 1fr); border: 1px solid rgba(67,65,58,.14); border-radius: 14px; background: rgba(255,255,255,.58); overflow: hidden; }
 .score-row div { min-width: 0; padding: 8px 10px; display: flex; justify-content: center; align-items: baseline; gap: 8px; border-right: 1px solid rgba(67,65,58,.12); }
 .score-row div:last-child { border: 0; }
 .score-row span { color: var(--muted); font-size: 9px; font-weight: 900; letter-spacing: .12em; }
@@ -99,7 +99,7 @@ h1 { margin: 0; font-size: clamp(23px, 4vw, 34px); line-height: .95; letter-spac
 .modal ol { margin: 18px 0 24px; padding-left: 24px; color: #555950; text-align: left; line-height: 1.8; font-size: 14px; }
 .primary-button { width: 100%; padding: 13px 18px; border: 0; border-radius: 12px; color: white; background: #bd4724; box-shadow: 0 5px 0 #86331c; cursor: pointer; font-weight: 1000; }
 .text-button { margin-top: 16px; }
-.result-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin: 20px 0; }
+.result-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; margin: 20px 0; }
 .result-grid span { padding: 10px 4px; border-radius: 10px; background: #e8e6df; color: var(--muted); font-size: 10px; font-weight: 800; }
 .result-grid strong { display: block; margin-top: 4px; color: var(--ink); font-size: 17px; }
 .secondary-button { width: 100%; margin-top: 12px; padding: 11px 16px; border: 1px solid #6f9c85; border-radius: 12px; color: #315f4d; background: #dcebe3; cursor: pointer; font-weight: 1000; }

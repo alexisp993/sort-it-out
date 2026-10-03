@@ -80,8 +80,8 @@ function formatTime(seconds: number) {
   return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 }
 
-function starsFor(level: Level, moves: number, seconds: number, reserveAdds = 0) {
-  const score = moves + Math.round(seconds * 0.5) + reserveAdds * 25
+function starsFor(level: Level, moves: number, seconds: number, reserveAdds = 0, resets = 0) {
+  const score = moves + Math.round(seconds * 0.5) + reserveAdds * 25 + resets * 35
   const threeStarPar = Math.round((LEVEL_COLUMNS[level] - 1) * LEVEL_ROWS[level] * 1.8 + level * 5)
   return score <= threeStarPar ? 3 : score <= threeStarPar + 65 ? 2 : 1
 }
@@ -121,6 +121,7 @@ export default function App() {
   const [showRules, setShowRules] = useState(false)
   const [showLevelMap, setShowLevelMap] = useState(false)
   const [seconds, setSeconds] = useState(0)
+  const [resetCount, setResetCount] = useState(0)
   const [bestScores, setBestScores] = useState<Record<number, number>>(() => readBestScores())
   const [unlockedLevel, setUnlockedLevel] = useState<Level>(() => Math.min(MAX_LEVEL, Math.max(1, Number(localStorage.getItem('sort-unlocked-level') ?? 1))) as Level)
   const [pulseColumn, setPulseColumn] = useState<number | null>(null)
@@ -140,7 +141,7 @@ export default function App() {
 
   useEffect(() => {
     if (game.status !== 'won') return
-    const stars = starsFor(game.level, game.moveCount, seconds, game.reserveAdds)
+    const stars = starsFor(game.level, game.moveCount, seconds, game.reserveAdds, resetCount)
     const key = `sort-best-stars-${game.level}`
     const best = Math.max(stars, Number(localStorage.getItem(key) ?? 0))
     localStorage.setItem(key, String(best))
@@ -153,7 +154,7 @@ export default function App() {
         return unlocked
       })
     }
-  }, [game.status, game.level, game.moveCount, seconds])
+  }, [game.status, game.level, game.moveCount, seconds, resetCount])
 
   useEffect(() => {
     if (game.status === 'playing' && !game.selected.length && !hasLegalMove(game)) setGame({ ...game, status: 'no-legal-move' })
@@ -268,6 +269,7 @@ export default function App() {
     setGame(createLevel(game.level))
     setHistory([])
     setSeconds(0)
+    setResetCount((count) => count + 1)
     setShowLevelMap(false)
     setPaused(false)
     setMessage('Flip the first tile in any lane')
@@ -277,6 +279,7 @@ export default function App() {
     setGame(createLevel(level))
     setHistory([])
     setSeconds(0)
+    setResetCount(0)
     setShowLevelMap(false)
     setPaused(false)
     setShowRules(false)
@@ -317,6 +320,7 @@ export default function App() {
         <div><span>MOVES</span><strong>{String(game.moveCount).padStart(2, '0')}</strong></div>
         <div><span>REVEALED</span><strong>{game.revealedCount}/{totalTiles}</strong></div>
         <div><span>TIME</span><strong>{formatTime(seconds)}</strong></div>
+        <div><span>RESETS</span><strong>{String(resetCount).padStart(2, '0')}</strong></div>
       </section>
 
       <section className="play-area">
@@ -400,8 +404,8 @@ export default function App() {
           <section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
             {game.status === 'won' ? (
               <>
-                <span className="modal-symbol">✓</span><h2 id="modal-title">SORTED!</h2><div className="stars" aria-label={`${starsFor(game.level, game.moveCount, seconds, game.reserveAdds)} stars`}>{'★'.repeat(starsFor(game.level, game.moveCount, seconds, game.reserveAdds))}{'☆'.repeat(3 - starsFor(game.level, game.moveCount, seconds, game.reserveAdds))}</div><p>Every lane is complete. Best: {bestStars}★</p>
-                <div className="result-grid"><span>Moves<strong>{game.moveCount}</strong></span><span>Revealed<strong>{game.revealedCount}</strong></span><span>Time<strong>{formatTime(seconds)}</strong></span><span>Extra reserve<strong>{game.reserveAdds}</strong></span></div>
+                <span className="modal-symbol">✓</span><h2 id="modal-title">SORTED!</h2><div className="stars" aria-label={`${starsFor(game.level, game.moveCount, seconds, game.reserveAdds, resetCount)} stars`}>{'★'.repeat(starsFor(game.level, game.moveCount, seconds, game.reserveAdds, resetCount))}{'☆'.repeat(3 - starsFor(game.level, game.moveCount, seconds, game.reserveAdds, resetCount))}</div><p>Every lane is complete. Best: {bestStars}★</p>
+                <div className="result-grid"><span>Moves<strong>{game.moveCount}</strong></span><span>Revealed<strong>{game.revealedCount}</strong></span><span>Time<strong>{formatTime(seconds)}</strong></span><span>Resets<strong>{resetCount}</strong></span><span>Extra reserve<strong>{game.reserveAdds}</strong></span></div>
                 <button className="primary-button" onClick={() => game.level < MAX_LEVEL ? loadLevel((game.level + 1) as Level) : reset()}>{game.level < MAX_LEVEL ? 'Next level' : 'Play again'}</button>
               </>
             ) : game.status === 'no-legal-move' ? (
