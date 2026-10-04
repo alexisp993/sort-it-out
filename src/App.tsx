@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   canMoveToColumn,
   canSelectTile,
@@ -189,9 +189,11 @@ export default function App() {
       : `No ${names[item.type]} match yet. Flip another ? tile.`
   }
 
-  function beginTileSelection(column: number, row: number) {
+  function beginTileSelection(column: number, row: number, event: ReactPointerEvent<HTMLButtonElement>) {
     const item = game.columns[column][row]
     if (!item || item.hidden || paused || !canSelectTile(game, { kind: 'column', column, row })) return
+    event.preventDefault()
+    try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* Pointer capture is unavailable in some embedded browsers. */ }
     if (game.selected.length && canMoveToColumn(game, column)) {
       suppressTileClick.current = true
       placeInColumn(column)
@@ -215,6 +217,16 @@ export default function App() {
     const next = selectTile(game, selection)
     setGame(next)
     setMessage(`${next.selected.length} ${names[item.type]}${next.selected.length === 1 ? '' : 's'} selected.`)
+  }
+
+  function handleBoardPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!dragSelecting.current) return
+    event.preventDefault()
+    const element = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-tile-column][data-tile-row]')
+    if (!element) return
+    const column = Number(element.dataset.tileColumn)
+    const row = Number(element.dataset.tileRow)
+    if (Number.isInteger(column) && Number.isInteger(row)) extendTileSelection(column, row)
   }
 
   function clickBoardTile(column: number, row: number) {
@@ -351,7 +363,7 @@ export default function App() {
 
         <div className="board-frame" style={{ width: `min(100%, ${game.columns.length * 88 + 24}px)` }}>
           <div className="board-topline"><span>FLIP THE NEXT ? IN ANY LANE</span><span>{hiddenLeft} HIDDEN</span></div>
-          <div className="board" style={{ gridTemplateColumns: `repeat(${game.columns.length}, minmax(0, 1fr))` }} onPointerUp={() => { dragSelecting.current = false }} onPointerCancel={() => { dragSelecting.current = false }}>
+          <div className="board" style={{ gridTemplateColumns: `repeat(${game.columns.length}, minmax(0, 1fr))` }} onPointerMove={handleBoardPointerMove} onPointerUp={() => { dragSelecting.current = false }} onPointerCancel={() => { dragSelecting.current = false }}>
             {game.columns.map((column, columnIndex) => {
               const legalTarget = canMoveToColumn(game, columnIndex)
               const nextHidden = firstHiddenRow(column)
@@ -373,9 +385,11 @@ export default function App() {
                       return (
                         <button
                           className={`board-slot tile-button ${sameSelection(game.selected, selection) ? 'is-selected' : ''} ${isNext ? 'is-flippable' : ''} ${!item.hidden && !canSelectTile(game, selection) ? 'is-blocked' : ''}`}
+                          data-tile-column={columnIndex}
+                          data-tile-row={row}
                           key={item.id}
                           onClick={() => clickBoardTile(columnIndex, row)}
-                          onPointerDown={() => beginTileSelection(columnIndex, row)}
+                          onPointerDown={(event) => beginTileSelection(columnIndex, row, event)}
                           onPointerEnter={() => extendTileSelection(columnIndex, row)}
                           disabled={item.hidden && !isNext}
                           aria-disabled={!item.hidden && !canSelectTile(game, selection)}
@@ -395,7 +409,7 @@ export default function App() {
 
       <footer className="game-footer">
         <button onClick={undo} disabled={!history.length}>↶ Undo</button>
-        <p>Press-drag across matching exposed tiles, then fill the lowest open spaces.</p>
+        <p>Press and drag across matching exposed tiles, then fill the lowest open spaces.</p>
         <button onClick={reset}>↻ Restart</button>
       </footer>
 
@@ -432,7 +446,7 @@ export default function App() {
             ) : showRules ? (
               <>
                 <span className="modal-symbol">?</span><h2 id="modal-title">HOW TO PLAY</h2>
-                <ol><li>Sort each icon set into its own lane. One lane finishes completely empty.</li><li>Press-drag across matching exposed tiles to select a group.</li><li>Tap a legal lane to transfer the group into its lowest open spaces.</li><li>Store a single unmatched tile in the reserve slots.</li></ol>
+                <ol><li>Sort each icon set into its own lane. One lane finishes completely empty.</li><li>Press and hold, then drag across matching exposed tiles to select a group.</li><li>Tap a legal lane to transfer the group into its lowest open spaces.</li><li>Store a single unmatched tile in the reserve slots.</li></ol>
                 <button className="primary-button" onClick={() => setShowRules(false)}>Got it</button>
               </>
             ) : (
