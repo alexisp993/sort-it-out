@@ -44,11 +44,9 @@ export function createLevel(level: Level = 1, random = Math.random): GameState {
   const totalTiles = (columns - 1) * rows
   const solvedPool = typeOrder.flatMap((type) => Array<TileType>(rows).fill(type))
   const solved = buildLevel(level, solvedPool, Array<boolean>(totalTiles).fill(true), typeOrder)
-  const { state: scrambled, plan } = scrambleState(solved, random)
-  const restored = reverseScramble(scrambled, plan)
-  if (restored.status !== 'won') throw new Error('Generated level failed solvability validation')
+  const scrambled = scrambleState(solved, random)
   const clues = LEVEL_CLUES[level]
-  const visibility = shuffle([...Array<boolean>(clues).fill(true), ...Array<boolean>(totalTiles - clues).fill(false)], random)
+  const visibility = playableVisibility(columns, rows, clues, random)
   return resetGeneratedLevel(scrambled, level, visibility)
 }
 
@@ -60,58 +58,41 @@ function shuffle<T>(items: T[], random: () => number): T[] {
   return items
 }
 
+function playableVisibility(columns: number, rows: number, clues: number, random: () => number): boolean[] {
+  // Keep each lane's clues at the bottom so every hidden tile is eventually exposed from the top.
+  const visibility = Array<boolean>(columns * rows).fill(false)
+  let remaining = clues
+  for (let column = 1; column < columns; column += 1) {
+    const lanesLeft = columns - column
+    const minimum = Math.max(0, remaining - (lanesLeft - 1) * rows)
+    const maximum = Math.min(rows, remaining)
+    const count = Math.min(maximum, minimum + Math.floor(random() * (maximum - minimum + 1)))
+    for (let row = rows - count; row < rows; row += 1) visibility[(column - 1) * rows + row] = true
+    remaining -= count
+  }
+  return visibility
+}
+
 function resetGeneratedLevel(state: GameState, level: Level, visibility: boolean[]): GameState {
   let index = 0
   const columns = state.columns.map((column) => column.map((item) => item ? { ...item, hidden: !visibility[index++] } : null))
   return { ...state, level, columns, tray: Array<Tile | null>(LEVEL_RESERVES[level]).fill(null), reserveAdds: 0, selected: [], moveCount: 0, revealedCount: columns.flat().filter((item) => item && !item.hidden).length, status: 'playing' }
 }
 
-type ScrambleMove = { first: number; second: number; firstRow: number; secondRow: number }
-
-function scrambleState(initial: GameState, random: () => number): { state: GameState; plan: ScrambleMove[] } {
-  let state = initial
-  const plan: ScrambleMove[] = []
-  const movableColumns = state.columns.length - 1
-  const rows = state.columns[0].length
-  for (let move = 0; move < Math.max(12, movableColumns * rows); move += 1) {
-    const first = 1 + Math.floor(random() * movableColumns)
-    let second = 1 + Math.floor(random() * movableColumns)
-    if (second === first) second = second === movableColumns ? 1 : second + 1
-    const firstRow = Math.floor(random() * rows)
-    const secondRow = Math.floor(random() * rows)
-    const moved = state.columns[first][firstRow]
-    if (!moved) continue
-    state = { ...state, selected: [{ kind: 'column', column: first, row: firstRow }] }
-    state = moveSelectedToColumnUnchecked(state, 0, true)
-    const other = state.columns[second][secondRow]
-    if (!other) continue
-    state = { ...state, selected: [{ kind: 'column', column: second, row: secondRow }] }
-    state = moveSelectedToColumnUnchecked(state, first, true)
-    const bufferRow = state.columns[0].findIndex((item) => item?.id === moved.id)
-    if (bufferRow < 0) continue
-    state = { ...state, selected: [{ kind: 'column', column: 0, row: bufferRow }] }
-    state = moveSelectedToColumnUnchecked(state, second, true)
-    plan.push({ first, second, firstRow, secondRow })
+function scrambleState(initial: GameState, random: () => number): GameState {
+  // Exchange only top chunks in disjoint lane pairs. The reverse order is a legal solve path.
+  const columns = initial.columns.map((column) => [...column])
+  const rows = columns[0].length
+  for (let first = 1; first + 1 < columns.length; first += 2) {
+    const second = first + 1
+    const cut = 1 + Math.floor(random() * Math.max(1, rows - 1))
+    for (let row = 0; row < cut; row += 1) {
+      const item = columns[first][row]
+      columns[first][row] = columns[second][row]
+      columns[second][row] = item
+    }
   }
-  return { state: { ...state, selected: [], status: 'playing' }, plan }
-}
-
-function reverseScramble(initial: GameState, plan: ScrambleMove[]): GameState {
-  let state: GameState = { ...initial, selected: [], status: 'playing' }
-  for (let index = plan.length - 1; index >= 0; index -= 1) {
-    const move = plan[index]
-    const moved = state.columns[move.second][move.secondRow]
-    if (!moved) return state
-    state = { ...state, selected: [{ kind: 'column', column: move.second, row: move.secondRow }] }
-    state = moveSelectedToColumnUnchecked(state, 0, true)
-    state = { ...state, selected: [{ kind: 'column', column: move.first, row: move.firstRow }] }
-    state = moveSelectedToColumnUnchecked(state, move.second, true)
-    const bufferRow = state.columns[0].findIndex((item) => item?.id === moved.id)
-    if (bufferRow < 0) return state
-    state = { ...state, selected: [{ kind: 'column', column: 0, row: bufferRow }] }
-    state = moveSelectedToColumnUnchecked(state, move.first, true)
-  }
-  return { ...state, status: isSolved(state.columns, state.tray, state.columnTypes) ? 'won' : 'playing' }
+  return { ...initial, columns, selected: [], status: 'playing' }
 }
 
 function buildLevel(level: Level, pool: TileType[], visibility: boolean[], typeOrder: TileType[]): GameState {
