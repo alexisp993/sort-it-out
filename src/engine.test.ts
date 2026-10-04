@@ -179,6 +179,13 @@ describe('sorting engine', () => {
     }
   })
 
+  it('keeps higher-level clues sparse instead of revealing a completed lane', () => {
+    for (const level of [5, 6, 7, 8, 9, 10] as const) {
+      const game = createLevel(level, () => 0.5)
+      expect(game.columns.slice(1).every((column) => column.filter((item) => item && !item.hidden).length < LEVEL_ROWS[level])).toBe(true)
+    }
+  })
+
   it('only reveals the next hidden tile in a column', () => {
     const game = createLevel(1, () => 0.5)
     const column = game.columns.findIndex((items) => firstHiddenRow(items) >= 0)

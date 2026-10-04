@@ -7,7 +7,7 @@ export const MAX_LEVEL: Level = 10
 export const LEVEL_COLUMNS: Record<Level, number> = { 1: 4, 2: 5, 3: 6, 4: 7, 5: 8, 6: 9, 7: 10, 8: 10, 9: 10, 10: 10 }
 export const LEVEL_ROWS: Record<Level, number> = { 1: 5, 2: 5, 3: 6, 4: 6, 5: 7, 6: 8, 7: 8, 8: 9, 9: 10, 10: 10 }
 export const LEVEL_TYPES: Record<Level, number> = { 1: 3, 2: 4, 3: 5, 4: 6, 5: 7, 6: 8, 7: 9, 8: 9, 9: 9, 10: 9 }
-export const LEVEL_CLUES: Record<Level, number> = { 1: 8, 2: 10, 3: 14, 4: 16, 5: 20, 6: 24, 7: 28, 8: 32, 9: 36, 10: 1 }
+export const LEVEL_CLUES: Record<Level, number> = { 1: 8, 2: 10, 3: 14, 4: 16, 5: 12, 6: 10, 7: 8, 8: 7, 9: 6, 10: 4 }
 export const LEVEL_RESERVES: Record<Level, number> = { 1: 3, 2: 3, 3: 3, 4: 2, 5: 2, 6: 2, 7: 1, 8: 1, 9: 1, 10: 1 }
 export const MAX_EXTRA_RESERVES = 1
 
@@ -54,7 +54,9 @@ export function createLevel(level: Level = 1, random = Math.random): GameState {
     const legacy = legacyScrambleState(solved, random)
     if (reverseScramble(legacy.state, legacy.plan).status !== 'won') throw new Error('Generated level failed solvability validation')
     scrambled = legacy.state
-    visibility = shuffle([...Array<boolean>(clues).fill(true), ...Array<boolean>(totalTiles - clues).fill(false)], random)
+    visibility = level >= 5
+      ? sparseVisibility(columns, rows, clues, random)
+      : shuffle([...Array<boolean>(clues).fill(true), ...Array<boolean>(totalTiles - clues).fill(false)], random)
   }
   return resetGeneratedLevel(scrambled, level, visibility)
 }
@@ -79,6 +81,20 @@ function playableVisibility(columns: number, rows: number, clues: number, random
     for (let row = rows - count; row < rows; row += 1) visibility[(column - 1) * rows + row] = true
     remaining -= count
   }
+  return visibility
+}
+
+function sparseVisibility(columns: number, rows: number, clues: number, random: () => number): boolean[] {
+  const slots: number[] = []
+  for (let column = 0; column < columns - 1; column += 1) {
+    const excludedRow = Math.floor(random() * rows)
+    for (let row = 0; row < rows; row += 1) {
+      if (row !== excludedRow) slots.push(column * rows + row)
+    }
+  }
+  shuffle(slots, random)
+  const visibility = Array<boolean>(columns * rows).fill(false)
+  slots.slice(0, clues).forEach((slot) => { visibility[slot] = true })
   return visibility
 }
 
