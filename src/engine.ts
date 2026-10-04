@@ -247,8 +247,7 @@ function isProgressMove(state: GameState, sourceColumn: number, targetColumn: nu
   const sourceAfter = columns[sourceColumn].find((item): item is Tile => Boolean(item))
   if (!sourceAfter || !sourceBefore || sourceAfter.type !== sourceBefore.type || sourceAfter.hidden !== sourceBefore.hidden) return true
   if (state.columns[targetColumn].every((item) => !item)) return true
-  const complete = columns[targetColumn].every((item) => item && !item.hidden && item.type === items[0]?.type)
-  return complete
+  return columns[targetColumn].every((item) => !item || (!item.hidden && item.type === items[0]?.type))
 }
 
 function finishMove(state: GameState, columns: GameState['columns'], tray: GameState['tray']): GameState {
