@@ -7,7 +7,7 @@ export const MAX_LEVEL: Level = 10
 export const LEVEL_COLUMNS: Record<Level, number> = { 1: 4, 2: 5, 3: 6, 4: 7, 5: 8, 6: 9, 7: 10, 8: 10, 9: 10, 10: 10 }
 export const LEVEL_ROWS: Record<Level, number> = { 1: 5, 2: 5, 3: 6, 4: 6, 5: 7, 6: 8, 7: 8, 8: 9, 9: 10, 10: 10 }
 export const LEVEL_TYPES: Record<Level, number> = { 1: 3, 2: 4, 3: 5, 4: 6, 5: 7, 6: 8, 7: 9, 8: 9, 9: 9, 10: 9 }
-export const LEVEL_CLUES: Record<Level, number> = { 1: 8, 2: 10, 3: 14, 4: 16, 5: 12, 6: 10, 7: 8, 8: 7, 9: 6, 10: 4 }
+export const LEVEL_CLUES: Record<Level, number> = { 1: 8, 2: 10, 3: 14, 4: 16, 5: 20, 6: 24, 7: 8, 8: 7, 9: 6, 10: 4 }
 export const LEVEL_RESERVES: Record<Level, number> = { 1: 3, 2: 3, 3: 3, 4: 2, 5: 2, 6: 2, 7: 1, 8: 1, 9: 1, 10: 1 }
 export const MAX_EXTRA_RESERVES = 1
 
@@ -49,14 +49,12 @@ export function createLevel(level: Level = 1, random = Math.random): GameState {
   let visibility: boolean[]
   if (level >= 7) {
     scrambled = constrainedScrambleState(solved, random)
-    visibility = playableVisibility(columns, rows, clues, random)
+    visibility = sparseLaterVisibility(columns, rows, clues, random)
   } else {
     const legacy = legacyScrambleState(solved, random)
     if (reverseScramble(legacy.state, legacy.plan).status !== 'won') throw new Error('Generated level failed solvability validation')
     scrambled = legacy.state
-    visibility = level >= 5
-      ? sparseVisibility(columns, rows, clues, random)
-      : shuffle([...Array<boolean>(clues).fill(true), ...Array<boolean>(totalTiles - clues).fill(false)], random)
+    visibility = shuffle([...Array<boolean>(clues).fill(true), ...Array<boolean>(totalTiles - clues).fill(false)], random)
   }
   return resetGeneratedLevel(scrambled, level, visibility)
 }
@@ -69,32 +67,11 @@ function shuffle<T>(items: T[], random: () => number): T[] {
   return items
 }
 
-function playableVisibility(columns: number, rows: number, clues: number, random: () => number): boolean[] {
-  // Keep each lane's clues at the bottom so every hidden tile is eventually exposed from the top.
+function sparseLaterVisibility(columns: number, rows: number, clues: number, random: () => number): boolean[] {
+  // Later levels reveal one top clue per lane, never a completed stack.
   const visibility = Array<boolean>(columns * rows).fill(false)
-  let remaining = clues
-  for (let column = 1; column < columns; column += 1) {
-    const lanesLeft = columns - column
-    const minimum = Math.max(0, remaining - (lanesLeft - 1) * rows)
-    const maximum = Math.min(rows, remaining)
-    const count = Math.min(maximum, minimum + Math.floor(random() * (maximum - minimum + 1)))
-    for (let row = rows - count; row < rows; row += 1) visibility[(column - 1) * rows + row] = true
-    remaining -= count
-  }
-  return visibility
-}
-
-function sparseVisibility(columns: number, rows: number, clues: number, random: () => number): boolean[] {
-  const slots: number[] = []
-  for (let column = 0; column < columns - 1; column += 1) {
-    const excludedRow = Math.floor(random() * rows)
-    for (let row = 0; row < rows; row += 1) {
-      if (row !== excludedRow) slots.push(column * rows + row)
-    }
-  }
-  shuffle(slots, random)
-  const visibility = Array<boolean>(columns * rows).fill(false)
-  slots.slice(0, clues).forEach((slot) => { visibility[slot] = true })
+  const lanes = shuffle(Array.from({ length: columns - 1 }, (_, index) => index), random)
+  lanes.slice(0, Math.min(clues, lanes.length)).forEach((lane) => { visibility[lane * rows] = true })
   return visibility
 }
 
@@ -108,8 +85,10 @@ function constrainedScrambleState(initial: GameState, random: () => number): Gam
   // Exchange only top chunks in disjoint lane pairs. The reverse order is a legal solve path.
   const columns = initial.columns.map((column) => [...column])
   const rows = columns[0].length
-  for (let first = 1; first + 1 < columns.length; first += 2) {
-    const second = first + 1
+  const lanes = shuffle(Array.from({ length: columns.length - 1 }, (_, index) => index + 1), random)
+  for (let index = 0; index + 1 < lanes.length; index += 2) {
+    const first = lanes[index]
+    const second = lanes[index + 1]
     const cut = 1 + Math.floor(random() * Math.max(1, rows - 1))
     for (let row = 0; row < cut; row += 1) {
       const item = columns[first][row]

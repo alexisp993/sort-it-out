@@ -161,20 +161,24 @@ describe('sorting engine', () => {
   it('builds later levels from reversible lane exchanges', () => {
     for (const level of [7, 8, 9, 10] as const) {
       const game = createLevel(level, () => 0.5)
-      for (let first = 1; first + 1 < game.columns.length; first += 2) {
-        const second = first + 1
-        const firstTarget = game.columnTypes[first]
-        const secondTarget = game.columnTypes[second]
-        const firstCut = game.columns[first].findIndex((item) => item?.type === firstTarget)
-        const secondCut = game.columns[second].findIndex((item) => item?.type === secondTarget)
-        expect(firstCut).toBeGreaterThan(0)
-        expect(secondCut).toBe(firstCut)
-        expect(game.columns[first].slice(0, firstCut).every((item) => item?.type === secondTarget)).toBe(true)
-        expect(game.columns[second].slice(0, secondCut).every((item) => item?.type === firstTarget)).toBe(true)
+      let mixedLanes = 0
+      for (let index = 1; index < game.columns.length; index += 1) {
+        const column = game.columns[index]
+        const target = game.columnTypes[index]
+        const cut = column.findIndex((item) => item?.type === target)
+        if (cut > 0) {
+          mixedLanes += 1
+          expect(column.slice(0, cut).every((item) => item && item.type !== target)).toBe(true)
+          expect(column.slice(cut).every((item) => item?.type === target)).toBe(true)
+        }
       }
+      expect(mixedLanes).toBe(game.columns.length - 2)
       for (const column of game.columns.slice(1)) {
         const firstVisible = column.findIndex((item) => item && !item.hidden)
-        if (firstVisible >= 0) expect(column.slice(0, firstVisible).every((item) => item?.hidden)).toBe(true)
+        if (firstVisible >= 0) {
+          expect(firstVisible).toBe(0)
+          expect(column.filter((item) => item && !item.hidden)).toHaveLength(1)
+        }
       }
     }
   })
