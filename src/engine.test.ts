@@ -306,6 +306,7 @@ describe('sorting engine', () => {
       const game = createLevel(level, () => 0.5)
       const topTypes = new Set(game.columns.slice(1).map((column) => column[0]?.type))
       expect(topTypes.size).toBe(LEVEL_TYPES[level])
+      expect(game.columns.slice(1).some((column) => column.some((item, row) => row > 0 && item?.type === column[row - 1]?.type))).toBe(true)
       for (const column of game.columns.slice(1)) {
         const types = column.flatMap((item) => item ? [item.type] : [])
         expect(new Set(types).size).toBe(2)

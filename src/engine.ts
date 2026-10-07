@@ -240,28 +240,28 @@ function constrainedScrambleState(initial: GameState, random: () => number): Gam
 }
 
 function randomizedRingTypes(rows: number, targets: TileType[], random: () => number): TileType[][] {
-  // Give every lane its own shuffled phase sequence. Keeping the same phase
-  // counts per lane preserves the global tile balance, while independent row
-  // order removes the repeated vertical pattern that made later levels feel
-  // pre-built.
+  // Use one shuffled phase sequence across the connected ring. Every lane
+  // keeps the same balanced counts, but the row pattern is intentionally
+  // irregular (rather than strict A/B alternation), so the first revealed
+  // rows cannot all be paired by inspection.
   const pairs = targets.map((target, index) => [targets[(index + 1) % targets.length], target])
   const midpoint = Math.floor(rows / 2)
   for (let attempt = 0; attempt < 96; attempt += 1) {
     const firstCount = Math.max(1, Math.min(rows - 1, midpoint + Math.floor(random() * 3) - 1))
-    const phaseRows = pairs.map(() => shuffle([
+    const phases = shuffle([
       ...Array<number>(firstCount).fill(0),
       ...Array<number>(rows - firstCount).fill(1),
-    ], random))
-    if (phaseRows.some((phases) => phases[0] === phases[1] || longestPhaseRun(phases) > 2)) continue
-    if (phaseRows.some((phases) => phases.every((phase, index) => index === 0 || phase !== phases[index - 1]))) continue
-    const sequences = pairs.map((pair, index) => phaseRows[index].map((phase) => pair[phase]))
+    ], random)
+    if (phases[0] === phases[1] || longestPhaseRun(phases) > 2) continue
+    if (phases.every((phase, index) => index === 0 || phase !== phases[index - 1])) continue
+    const sequences = pairs.map((pair) => phases.map((phase) => pair[phase]))
     if (solvesRingTypes(sequences, targets, rows)) return sequences
   }
 
   // A deterministic RNG can repeatedly produce the same choices. Preserve a
-  // safe fallback for that case; normal gameplay uses Math.random and reaches
-  // the varied branch above.
-  const phases = Array.from({ length: rows }, (_, row) => row % 2)
+  // safe irregular fallback for that case instead of reverting to a visibly
+  // predictable alternating stack.
+  const phases = Array.from({ length: rows }, (_, row) => [0, 1, 0, 1, 1, 0, 0, 1, 0, 1][row])
   return pairs.map((pair) => phases.map((phase) => pair[phase]))
 }
 
