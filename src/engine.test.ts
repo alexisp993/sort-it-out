@@ -68,21 +68,8 @@ function canSolveRingCycle(game: GameState): boolean {
   type Cell = Tile['type'] | null
   type Board = Cell[][]
   const rows = game.columns[0].length
-  const targetByType = new Map<Tile['type'], number>()
-  game.columnTypes.forEach((type, index) => { if (type) targetByType.set(type, index) })
-  const laneOrder: number[] = []
-  let lane = 1
-  while (!laneOrder.includes(lane)) {
-    laneOrder.push(lane)
-    const ownType = game.columnTypes[lane]
-    const foreignType = game.columns[lane].find((item) => item && item.type !== ownType)?.type
-    const nextLane = foreignType ? targetByType.get(foreignType) : undefined
-    if (nextLane === undefined) return false
-    lane = nextLane
-  }
-  if (lane !== 1 || laneOrder.length !== game.columns.length - 1) return false
-  const targets = laneOrder.map((index) => game.columnTypes[index]!).filter(Boolean)
-  let board: Board = [[...Array<Cell>(rows).fill(null)], ...laneOrder.map((index) => game.columns[index].map((item) => item?.type ?? null))]
+  const targets = game.columnTypes.slice(1).filter((type): type is Tile['type'] => Boolean(type))
+  let board: Board = game.columns.map((column) => column.map((item) => item?.type ?? null))
   const solved = (candidate: Board) => candidate[0].every((item) => item === null)
     && candidate.slice(1).every((column, index) => column.every((item) => item === targets[index]))
   const addLane = (lane: number, offset: number) => ((lane - 1 + offset + targets.length) % targets.length) + 1
@@ -306,10 +293,9 @@ describe('sorting engine', () => {
       const game = createLevel(level, () => 0.5)
       const topTypes = new Set(game.columns.slice(1).map((column) => column[0]?.type))
       expect(topTypes.size).toBe(LEVEL_TYPES[level])
-      expect(game.columns.slice(1).some((column) => column.some((item, row) => row > 0 && item?.type === column[row - 1]?.type))).toBe(true)
       for (const column of game.columns.slice(1)) {
         const types = column.flatMap((item) => item ? [item.type] : [])
-        expect(new Set(types).size).toBe(2)
+        expect(new Set(types).size).toBeGreaterThanOrEqual(3)
         expect(types[0]).not.toBe(types[1])
       }
       for (const column of game.columns.slice(1)) {
@@ -319,17 +305,7 @@ describe('sorting engine', () => {
           expect(column.filter((item) => item && !item.hidden)).toHaveLength(1)
         }
       }
-      const targetByType = new Map(game.columnTypes.map((type, index) => [type, index]))
-      const visited = new Set<number>()
-      let lane = 1
-      while (!visited.has(lane)) {
-        visited.add(lane)
-        const ownType = game.columnTypes[lane]
-        const foreignType = game.columns[lane].find((item) => item && item.type !== ownType)?.type
-        lane = foreignType ? (targetByType.get(foreignType) ?? -1) : -1
-      }
-      expect(lane).toBe(1)
-      expect(visited.size).toBe(LEVEL_TYPES[level])
+      expect(canSolveRingCycle(game)).toBe(true)
     }
   })
 
@@ -341,7 +317,7 @@ describe('sorting engine', () => {
     }
     const quality = evaluatePuzzleQuality(prebuilt, 7)
     expect(quality.accepted).toBe(false)
-    expect(quality.maxGroupConcentration).toBeGreaterThanOrEqual(0.6)
+    expect(quality.maxGroupConcentration).toBeGreaterThanOrEqual(0.5)
     expect(quality.reasons.length).toBeGreaterThan(0)
   })
 

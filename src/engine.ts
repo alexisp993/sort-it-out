@@ -218,7 +218,10 @@ function constrainedScrambleState(initial: GameState, random: () => number): Gam
   // travel through the entire board instead of finishing isolated triplets.
   const columns = initial.columns.map((column) => [...column])
   const rows = columns[0].length
-  const lanes = shuffle(Array.from({ length: columns.length - 1 }, (_, index) => index + 1), random)
+  // Keep the ring connected across the visible lane order. The randomized
+  // row offsets below provide the visual shuffle; a stable ring makes the
+  // constructive solve proof independent of hidden metadata.
+  const lanes = Array.from({ length: columns.length - 1 }, (_, index) => index + 1)
   const tilesByType = new Map<TileType, Tile[]>()
   initial.columns.flat().forEach((item) => {
     if (!item) return
@@ -240,39 +243,36 @@ function constrainedScrambleState(initial: GameState, random: () => number): Gam
 }
 
 function randomizedRingTypes(rows: number, targets: TileType[], random: () => number): TileType[][] {
-  // Use one shuffled phase sequence across the connected ring. Every lane
-  // keeps the same balanced counts, but the row pattern is intentionally
-  // irregular (rather than strict A/B alternation), so the first revealed
-  // rows cannot all be paired by inspection.
-  const pairs = targets.map((target, index) => [targets[(index + 1) % targets.length], target])
-  const midpoint = Math.floor(rows / 2)
+  // Each row is a cyclic permutation of every target type. This keeps the
+  // global tile counts exact while giving every lane several different types
+  // instead of a recognizable two-type stack.
+  const templates: Record<number, number[][]> = {
+    8: [[8, 0, 1, 2, 3, 2, 3, 3], [3, 2, 1, 1, 0, 1, 2, 1], [7, 6, 5, 5, 6, 6, 7, 8], [4, 3, 3, 2, 3, 4, 3, 4]],
+    9: [[3, 2, 3, 4, 5, 6, 6, 5, 4], [5, 6, 5, 6, 5, 5, 4, 5, 6], [7, 6, 6, 7, 8, 7, 6, 6, 7], [6, 7, 6, 6, 7, 7, 8, 8, 0]],
+    10: [[4, 3, 2, 1, 0, 1, 0, 1, 2, 3], [3, 4, 3, 2, 3, 2, 2, 1, 2, 1], [5, 6, 5, 4, 3, 4, 5, 6, 7, 6], [6, 5, 5, 4, 5, 5, 4, 5, 4, 4]],
+  }
+  const options = templates[rows] ?? templates[8]
   for (let attempt = 0; attempt < 96; attempt += 1) {
-    const firstCount = Math.max(1, Math.min(rows - 1, midpoint + Math.floor(random() * 3) - 1))
-    const phases = shuffle([
-      ...Array<number>(firstCount).fill(0),
-      ...Array<number>(rows - firstCount).fill(1),
-    ], random)
-    if (phases[0] === phases[1] || longestPhaseRun(phases) > 2) continue
-    if (phases.every((phase, index) => index === 0 || phase !== phases[index - 1])) continue
-    const sequences = pairs.map((pair) => phases.map((phase) => pair[phase]))
+    const template = options[Math.floor(random() * options.length)]!
+    const shift = Math.floor(random() * targets.length)
+    const offsets = template.map((offset) => (offset + shift) % targets.length)
+    if (offsets[0] === 0 || longestTypeRun(offsets) > 2 || new Set(offsets).size < 3) continue
+    const sequences = targets.map((_, lane) => offsets.map((offset) => targets[(lane + offset) % targets.length]!))
     if (solvesRingTypes(sequences, targets, rows)) return sequences
   }
 
-  // A deterministic RNG can repeatedly produce the same choices. Preserve a
-  // safe irregular fallback for that case instead of reverting to a visibly
-  // predictable alternating stack.
-  const phases = Array.from({ length: rows }, (_, row) => [0, 1, 0, 1, 1, 0, 0, 1, 0, 1][row])
-  return pairs.map((pair) => phases.map((phase) => pair[phase]))
+  const offsets = options[0]!
+  return targets.map((_, lane) => offsets.map((offset) => targets[(lane + offset) % targets.length]!))
 }
 
-function longestPhaseRun(sequence: number[]): number {
+function longestTypeRun(sequence: Array<number | TileType>): number {
   let longest = 0
   let run = 0
-  let previous: number | null = null
-  sequence.forEach((phase) => {
-    run = phase === previous ? run + 1 : 1
+  let previous: number | TileType | null = null
+  sequence.forEach((type) => {
+    run = type === previous ? run + 1 : 1
     longest = Math.max(longest, run)
-    previous = phase
+    previous = type
   })
   return longest
 }
