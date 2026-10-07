@@ -39,10 +39,13 @@ const QUALITY_THRESHOLDS: Record<Level, QualityThresholds> = {
   4: { maxRun: 6, maxConcentration: 1, minDiversity: 1, minDistribution: 0, maxPreSolved: 1, maxRevealRun: 6 },
   5: { maxRun: 7, maxConcentration: 1, minDiversity: 1, minDistribution: 0, maxPreSolved: 1, maxRevealRun: 7 },
   6: { maxRun: 8, maxConcentration: 1, minDiversity: 1, minDistribution: 0, maxPreSolved: 1, maxRevealRun: 8 },
-  7: { maxRun: 2, maxConcentration: 0.7, minDiversity: 1.8, minDistribution: 0.2, maxPreSolved: 0.65, maxRevealRun: 2 },
-  8: { maxRun: 2, maxConcentration: 0.7, minDiversity: 1.8, minDistribution: 0.2, maxPreSolved: 0.65, maxRevealRun: 2 },
-  9: { maxRun: 2, maxConcentration: 0.7, minDiversity: 1.8, minDistribution: 0.2, maxPreSolved: 0.65, maxRevealRun: 2 },
-  10: { maxRun: 2, maxConcentration: 0.7, minDiversity: 1.8, minDistribution: 0.2, maxPreSolved: 0.65, maxRevealRun: 2 },
+  // Later levels use the same reversible scramble as Levels 1–6. The
+  // thresholds stay focused on detecting genuinely pre-built lanes while
+  // allowing the natural longer runs that this shared scramble can produce.
+  7: { maxRun: 6, maxConcentration: 0.8, minDiversity: 3, minDistribution: 0.4, maxPreSolved: 0.65, maxRevealRun: 6 },
+  8: { maxRun: 6, maxConcentration: 0.8, minDiversity: 3, minDistribution: 0.4, maxPreSolved: 0.65, maxRevealRun: 6 },
+  9: { maxRun: 6, maxConcentration: 0.8, minDiversity: 3, minDistribution: 0.4, maxPreSolved: 0.65, maxRevealRun: 6 },
+  10: { maxRun: 6, maxConcentration: 0.8, minDiversity: 3, minDistribution: 0.4, maxPreSolved: 0.65, maxRevealRun: 6 },
 }
 
 const MAX_GENERATION_ATTEMPTS = 12
@@ -84,27 +87,10 @@ export function createLevel(level: Level = 1, random = Math.random): GameState {
   let scrambled: GameState
   let visibility: boolean[]
   if (level >= 7) {
-    let best: { state: GameState; quality: PuzzleQuality } | null = null
-    let attempts = 0
-    for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt += 1) {
-      attempts = attempt + 1
-      const candidate = resetGeneratedLevel(
-        constrainedScrambleState(solved, random),
-        level,
-        sparseLaterVisibility(columns, rows, clues, random),
-      )
-      if (!hasLegalMove(candidate)) continue
-      const quality = evaluatePuzzleQuality(candidate, level)
-      if (!best || quality.score > best.quality.score) best = { state: candidate, quality }
-      if (quality.accepted) {
-        if (isLocalDevelopment() && attempts > 1) console.debug('[Sort It Out] regenerated later level', { level, attempts, quality })
-        return candidate
-      }
-    }
-    // The balanced cycle construction is a known reversible fallback. It is
-    // intentionally returned instead of throwing if a custom RNG is hostile.
-    if (isLocalDevelopment()) console.warn('[Sort It Out] later-level quality fallback', { level, attempts, quality: best?.quality })
-    return best!.state
+    const legacy = legacyScrambleState(solved, random)
+    if (reverseScramble(legacy.state, legacy.plan).status !== 'won') throw new Error('Generated level failed solvability validation')
+    scrambled = legacy.state
+    visibility = sparseLaterVisibility(columns, rows, clues, random)
   } else {
     const legacy = legacyScrambleState(solved, random)
     if (reverseScramble(legacy.state, legacy.plan).status !== 'won') throw new Error('Generated level failed solvability validation')
