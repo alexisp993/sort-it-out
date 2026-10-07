@@ -9,7 +9,7 @@ export const LEVEL_ROWS: Record<Level, number> = { 1: 5, 2: 5, 3: 6, 4: 6, 5: 7,
 export const LEVEL_TYPES: Record<Level, number> = { 1: 3, 2: 4, 3: 5, 4: 6, 5: 7, 6: 8, 7: 9, 8: 9, 9: 9, 10: 9 }
 export const LEVEL_CLUES: Record<Level, number> = { 1: 8, 2: 10, 3: 14, 4: 16, 5: 20, 6: 24, 7: 8, 8: 7, 9: 6, 10: 4 }
 export const LEVEL_RESERVES: Record<Level, number> = { 1: 3, 2: 3, 3: 3, 4: 2, 5: 2, 6: 2, 7: 1, 8: 1, 9: 1, 10: 1 }
-export const MAX_EXTRA_RESERVES = 1
+export const MAX_RESERVE_SLOTS = 5
 
 export interface PuzzleQuality {
   accepted: boolean
@@ -555,7 +555,7 @@ export function moveSelectedToTray(state: GameState, trayIndex: number): GameSta
 }
 
 export function addReserveSlot(state: GameState): GameState {
-  if (state.status !== 'no-legal-move' || state.reserveAdds >= MAX_EXTRA_RESERVES) return state
+  if (state.status !== 'no-legal-move' || state.tray.length >= MAX_RESERVE_SLOTS) return state
   return { ...state, tray: [...state.tray, null], reserveAdds: state.reserveAdds + 1, selected: [], status: 'playing' }
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addReserveSlot, canMoveToColumn, canSelectTile, createLevel, evaluatePuzzleQuality, firstHiddenRow, hasLegalMove, LEVEL_CLUES, LEVEL_COLUMNS, LEVEL_RESERVES, LEVEL_ROWS, LEVEL_TYPES, moveSelectedToColumn, revealTile, seededRandom, selectTile, type GameState, type Tile } from './engine'
+import { addReserveSlot, canMoveToColumn, canSelectTile, createLevel, evaluatePuzzleQuality, firstHiddenRow, hasLegalMove, LEVEL_CLUES, LEVEL_COLUMNS, LEVEL_RESERVES, LEVEL_ROWS, LEVEL_TYPES, MAX_RESERVE_SLOTS, moveSelectedToColumn, revealTile, seededRandom, selectTile, type GameState, type Tile } from './engine'
 
 function canSolveVisibleBoard(game: GameState, maxStates = 5000): boolean {
   const targetByType = new Map<Tile['type'], number>()
@@ -178,13 +178,20 @@ describe('sorting engine', () => {
     expect(createLevel(7, () => 0.5).tray).toHaveLength(LEVEL_RESERVES[7])
   })
 
-  it('allows one emergency reserve after a dead end', () => {
-    const stuck = { ...createLevel(1, () => 0.5), status: 'no-legal-move' as const }
-    const helped = addReserveSlot(stuck)
-    expect(helped.tray).toHaveLength(4)
-    expect(helped.reserveAdds).toBe(1)
-    expect(helped.status).toBe('playing')
-    expect(addReserveSlot(helped)).toBe(helped)
+  it('adds one emergency reserve at a time up to five total slots', () => {
+    for (const level of [1, 7] as const) {
+      let game = createLevel(level, () => 0.5)
+      expect(addReserveSlot(game)).toBe(game)
+      while (game.tray.length < MAX_RESERVE_SLOTS) {
+        const helped = addReserveSlot({ ...game, status: 'no-legal-move' })
+        expect(helped.tray).toHaveLength(game.tray.length + 1)
+        expect(helped.reserveAdds).toBe(game.reserveAdds + 1)
+        expect(helped.status).toBe('playing')
+        game = helped
+      }
+      const capped = { ...game, status: 'no-legal-move' as const }
+      expect(addReserveSlot(capped)).toBe(capped)
+    }
   })
 
   it('keeps a hidden exposed tile playable even with a full reserve', () => {

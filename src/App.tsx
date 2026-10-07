@@ -11,6 +11,7 @@ import {
   moveSelectedToColumn,
   moveSelectedToTray,
   MAX_LEVEL,
+  MAX_RESERVE_SLOTS,
   revealTile,
   selectTile,
   getSelectedTile,
@@ -426,7 +427,7 @@ export default function App() {
               <>
                 <span className="modal-symbol">!</span><h2 id="modal-title">OUT OF MOVES</h2><p>There is no productive move available right now. Undo the last move, use one extra reserve, or restart the puzzle.</p>
                 <button className="primary-button" onClick={undo} disabled={!history.length}>↶ Undo last move</button>
-                <button className="secondary-button" onClick={useExtraReserve} disabled={game.reserveAdds >= 1}>＋1 extra reserve {game.reserveAdds >= 1 ? 'used' : ''}</button>
+                <button className="secondary-button" onClick={useExtraReserve} disabled={game.tray.length >= MAX_RESERVE_SLOTS}>＋1 reserve slot ({game.tray.length}/{MAX_RESERVE_SLOTS})</button>
                 <button className="text-button" onClick={reset}>Restart puzzle</button>
               </>
             ) : showLevelMap ? (
