@@ -1,5 +1,95 @@
 import { describe, expect, it } from 'vitest'
-import { addReserveSlot, canMoveToColumn, canSelectTile, createLevel, firstHiddenRow, hasLegalMove, LEVEL_CLUES, LEVEL_COLUMNS, LEVEL_RESERVES, LEVEL_ROWS, LEVEL_TYPES, moveSelectedToColumn, revealTile, selectTile, type GameState, type Tile } from './engine'
+import { addReserveSlot, canMoveToColumn, canSelectTile, createLevel, evaluatePuzzleQuality, firstHiddenRow, hasLegalMove, LEVEL_CLUES, LEVEL_COLUMNS, LEVEL_RESERVES, LEVEL_ROWS, LEVEL_TYPES, moveSelectedToColumn, revealTile, seededRandom, selectTile, type GameState, type Tile } from './engine'
+
+function canSolveVisibleBoard(game: GameState, maxStates = 5000): boolean {
+  const targetByType = new Map<Tile['type'], number>()
+  game.columnTypes.forEach((type, index) => { if (type) targetByType.set(type, index) })
+  const visited = new Set<number>()
+  for (let start = 1; start < game.columns.length; start += 1) {
+    if (visited.has(start)) continue
+    const cycle: number[] = []
+    let lane = start
+    while (!visited.has(lane)) {
+      visited.add(lane)
+      cycle.push(lane)
+      const ownType = game.columnTypes[lane]
+      const otherType = game.columns[lane].find((item) => item && item.type !== ownType)?.type
+      const nextLane = otherType ? targetByType.get(otherType) : undefined
+      if (!nextLane) return false
+      lane = nextLane
+    }
+    if (lane !== start || cycle.length !== 3 || !canSolveCycle(game, cycle, maxStates)) return false
+  }
+  return true
+}
+
+function canSolveCycle(game: GameState, lanes: number[], maxStates: number): boolean {
+  const rows = game.columns[0].length
+  const active = [0, ...lanes]
+  const start = active.map((index) => game.columns[index].map((item) => item?.type ?? null))
+  const key = (columns: Array<Array<Tile['type'] | null>>) => JSON.stringify(columns)
+  const solved = (columns: Array<Array<Tile['type'] | null>>) => columns[0].every((item) => !item)
+    && lanes.every((lane, index) => columns[index + 1].every((item) => item === game.columnTypes[lane]))
+  const queue = [start]
+  const seen = new Set([key(start)])
+  while (queue.length && seen.size <= maxStates) {
+    const columns = queue.shift()!
+    if (solved(columns)) return true
+    for (let source = 0; source < columns.length; source += 1) {
+      const first = columns[source].findIndex(Boolean)
+      if (first < 0) continue
+      const type = columns[source][first]
+      let run = 0
+      while (first + run < rows && columns[source][first + run] === type) run += 1
+      for (let count = 1; count <= run; count += 1) {
+        for (let target = 0; target < columns.length; target += 1) {
+          if (target === source) continue
+          const destination = columns[target]
+          const top = destination.find(Boolean)
+          if (destination.filter((item) => !item).length < count || (top && top !== type)) continue
+          const next = columns.map((column) => [...column])
+          for (let offset = 0; offset < count; offset += 1) next[source][first + offset] = null
+          const slots: number[] = []
+          for (let row = rows - 1; row >= 0 && slots.length < count; row -= 1) if (!next[target][row]) slots.push(row)
+          for (let offset = 0; offset < count; offset += 1) next[target][slots[offset]] = type
+          const nextKey = key(next)
+          if (!seen.has(nextKey)) {
+            seen.add(nextKey)
+            queue.push(next)
+          }
+        }
+      }
+    }
+  }
+  return false
+}
+
+function canSolveTripletCycles(game: GameState): boolean {
+  const lanesByTarget = new Map(game.columnTypes.flatMap((type, index) => type ? [[type, index] as const] : []))
+  const visited = new Set<number>()
+  for (let start = 1; start < game.columns.length; start += 1) {
+    if (visited.has(start)) continue
+    const triplet: number[] = []
+    let lane = start
+    while (!visited.has(lane) && triplet.length < 4) {
+      visited.add(lane)
+      triplet.push(lane)
+      const target = game.columnTypes[lane]
+      const foreign = game.columns[lane].find((item) => item && item.type !== target)?.type
+      const next = foreign ? lanesByTarget.get(foreign) : undefined
+      if (!next) return false
+      lane = next
+    }
+    if (triplet.length !== 3 || lane !== start) return false
+    const reduced: GameState = {
+      ...game,
+      columns: [game.columns[0], ...triplet.map((index) => game.columns[index])],
+      columnTypes: [null, ...triplet.map((index) => game.columnTypes[index])],
+    }
+    if (!canSolveVisibleBoard(reduced, 5000)) return false
+  }
+  return visited.size === game.columns.length - 1
+}
 
 describe('sorting engine', () => {
   it('starts small with balanced tiles, clues, and one vacant column', () => {
@@ -158,21 +248,14 @@ describe('sorting engine', () => {
     expect(game.columnTypes.filter(Boolean)).toHaveLength(LEVEL_TYPES[1])
   })
 
-  it('builds later levels from reversible lane exchanges', () => {
+  it('builds later levels from alternating three-lane cycles', () => {
     for (const level of [7, 8, 9, 10] as const) {
       const game = createLevel(level, () => 0.5)
-      let mixedLanes = 0
-      for (let index = 1; index < game.columns.length; index += 1) {
-        const column = game.columns[index]
-        const target = game.columnTypes[index]
-        const cut = column.findIndex((item) => item?.type === target)
-        if (cut > 0) {
-          mixedLanes += 1
-          expect(column.slice(0, cut).every((item) => item && item.type !== target)).toBe(true)
-          expect(column.slice(cut).every((item) => item?.type === target)).toBe(true)
-        }
+      for (const column of game.columns.slice(1)) {
+        const types = column.flatMap((item) => item ? [item.type] : [])
+        expect(new Set(types).size).toBe(2)
+        expect(types.some((type, index) => index > 0 && type === types[index - 1])).toBe(false)
       }
-      expect(mixedLanes).toBe(game.columns.length - 2)
       for (const column of game.columns.slice(1)) {
         const firstVisible = column.findIndex((item) => item && !item.hidden)
         if (firstVisible >= 0) {
@@ -181,6 +264,71 @@ describe('sorting engine', () => {
         }
       }
     }
+  })
+
+  it('rejects pre-built later-level layouts with quality diagnostics', () => {
+    const game = createLevel(7, seededRandom(7))
+    const prebuilt = {
+      ...game,
+      columns: game.columns.map((column, index) => index === 1 ? column.map((item) => item ? { ...item, type: game.columnTypes[1]!, hidden: false } : null) : column),
+    }
+    const quality = evaluatePuzzleQuality(prebuilt, 7)
+    expect(quality.accepted).toBe(false)
+    expect(quality.maxGroupConcentration).toBeGreaterThanOrEqual(0.6)
+    expect(quality.reasons.length).toBeGreaterThan(0)
+  })
+
+  it('rejects even short adjacent runs on later levels', () => {
+    const game = createLevel(8, seededRandom(8080))
+    const columns = game.columns.map((column, index) => index === 1
+      ? column.map((item, row) => row === 1 && item ? { ...item, type: column[0]!.type } : item)
+      : column)
+    const quality = evaluatePuzzleQuality({ ...game, columns }, 8)
+    expect(quality.longestSameTypeRun).toBeGreaterThan(1)
+    expect(quality.accepted).toBe(false)
+  })
+
+  it('uses difficulty-aware quality thresholds instead of one blanket rule', () => {
+    const game = createLevel(7, seededRandom(19))
+    const longRun = {
+      ...game,
+      columns: game.columns.map((column, index) => index === 1 ? column.map((item) => item ? { ...item, type: game.columnTypes[1]!, hidden: false } : null) : column),
+    }
+    expect(evaluatePuzzleQuality(longRun, 1).accepted).toBe(true)
+    expect(evaluatePuzzleQuality(longRun, 7).accepted).toBe(false)
+  })
+
+  it('keeps later-level generation within quality thresholds across seeded samples', () => {
+    for (const level of [7, 8, 9, 10] as const) {
+      const samples = Array.from({ length: 40 }, (_, seed) => evaluatePuzzleQuality(createLevel(level, seededRandom(seed + level * 1000)), level))
+      expect(samples.every((quality) => quality.accepted)).toBe(true)
+      expect(Math.max(...samples.map((quality) => quality.longestSameTypeRun))).toBeLessThanOrEqual(1)
+      expect(Math.max(...samples.map((quality) => quality.maxGroupConcentration))).toBeLessThanOrEqual(0.7)
+    }
+  })
+
+  it('keeps generated later levels actionable after all clues are revealed', () => {
+    for (const level of [7, 8, 9, 10] as const) {
+      let game = createLevel(level, seededRandom(level))
+      game.columns.forEach((column, columnIndex) => column.forEach((item, rowIndex) => {
+        if (item?.hidden) game = revealTile(game, columnIndex, rowIndex)
+      }))
+      expect(hasLegalMove(game)).toBe(true)
+    }
+  })
+
+  it('preserves a legal solve path for generated later-level layouts', () => {
+    for (const level of [7, 8, 9, 10] as const) {
+      for (let seed = 0; seed < 12; seed += 1) {
+        const solvable = canSolveTripletCycles(createLevel(level, seededRandom(seed + level * 1000)))
+        expect(solvable).toBe(true)
+      }
+    }
+  })
+
+  it('reproduces the same layout from the same seed', () => {
+    const signature = (game: GameState) => game.columns.map((column) => column.map((item) => item ? `${item.type}:${item.hidden ? 'h' : 'v'}` : '-'))
+    expect(signature(createLevel(9, seededRandom(12345)))).toEqual(signature(createLevel(9, seededRandom(12345))))
   })
 
   it('keeps higher-level clues sparse instead of revealing a completed lane', () => {

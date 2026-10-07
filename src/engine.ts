@@ -11,6 +11,42 @@ export const LEVEL_CLUES: Record<Level, number> = { 1: 8, 2: 10, 3: 14, 4: 16, 5
 export const LEVEL_RESERVES: Record<Level, number> = { 1: 3, 2: 3, 3: 3, 4: 2, 5: 2, 6: 2, 7: 1, 8: 1, 9: 1, 10: 1 }
 export const MAX_EXTRA_RESERVES = 1
 
+export interface PuzzleQuality {
+  accepted: boolean
+  score: number
+  longestSameTypeRun: number
+  maxGroupConcentration: number
+  averageColumnDiversity: number
+  distributionScore: number
+  preSolvedRatio: number
+  revealPredictability: number
+  reasons: string[]
+}
+
+type QualityThresholds = {
+  maxRun: number
+  maxConcentration: number
+  minDiversity: number
+  minDistribution: number
+  maxPreSolved: number
+  maxRevealRun: number
+}
+
+const QUALITY_THRESHOLDS: Record<Level, QualityThresholds> = {
+  1: { maxRun: 10, maxConcentration: 1, minDiversity: 1, minDistribution: 0, maxPreSolved: 1, maxRevealRun: 10 },
+  2: { maxRun: 5, maxConcentration: 1, minDiversity: 1, minDistribution: 0, maxPreSolved: 1, maxRevealRun: 5 },
+  3: { maxRun: 6, maxConcentration: 1, minDiversity: 1, minDistribution: 0, maxPreSolved: 1, maxRevealRun: 6 },
+  4: { maxRun: 6, maxConcentration: 1, minDiversity: 1, minDistribution: 0, maxPreSolved: 1, maxRevealRun: 6 },
+  5: { maxRun: 7, maxConcentration: 1, minDiversity: 1, minDistribution: 0, maxPreSolved: 1, maxRevealRun: 7 },
+  6: { maxRun: 8, maxConcentration: 1, minDiversity: 1, minDistribution: 0, maxPreSolved: 1, maxRevealRun: 8 },
+  7: { maxRun: 1, maxConcentration: 0.7, minDiversity: 1.8, minDistribution: 0.2, maxPreSolved: 0.65, maxRevealRun: 1 },
+  8: { maxRun: 1, maxConcentration: 0.7, minDiversity: 1.8, minDistribution: 0.2, maxPreSolved: 0.65, maxRevealRun: 1 },
+  9: { maxRun: 1, maxConcentration: 0.7, minDiversity: 1.8, minDistribution: 0.2, maxPreSolved: 0.65, maxRevealRun: 1 },
+  10: { maxRun: 1, maxConcentration: 0.7, minDiversity: 1.8, minDistribution: 0.2, maxPreSolved: 0.65, maxRevealRun: 1 },
+}
+
+const MAX_GENERATION_ATTEMPTS = 12
+
 export interface Tile {
   id: string
   type: TileType
@@ -48,8 +84,27 @@ export function createLevel(level: Level = 1, random = Math.random): GameState {
   let scrambled: GameState
   let visibility: boolean[]
   if (level >= 7) {
-    scrambled = constrainedScrambleState(solved, random)
-    visibility = sparseLaterVisibility(columns, rows, clues, random)
+    let best: { state: GameState; quality: PuzzleQuality } | null = null
+    let attempts = 0
+    for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt += 1) {
+      attempts = attempt + 1
+      const candidate = resetGeneratedLevel(
+        constrainedScrambleState(solved, random),
+        level,
+        sparseLaterVisibility(columns, rows, clues, random),
+      )
+      if (!hasLegalMove(candidate)) continue
+      const quality = evaluatePuzzleQuality(candidate, level)
+      if (!best || quality.score > best.quality.score) best = { state: candidate, quality }
+      if (quality.accepted) {
+        if (isLocalDevelopment() && attempts > 1) console.debug('[Sort It Out] regenerated later level', { level, attempts, quality })
+        return candidate
+      }
+    }
+    // The balanced cycle construction is a known reversible fallback. It is
+    // intentionally returned instead of throwing if a custom RNG is hostile.
+    if (isLocalDevelopment()) console.warn('[Sort It Out] later-level quality fallback', { level, attempts, quality: best?.quality })
+    return best!.state
   } else {
     const legacy = legacyScrambleState(solved, random)
     if (reverseScramble(legacy.state, legacy.plan).status !== 'won') throw new Error('Generated level failed solvability validation')
@@ -57,6 +112,82 @@ export function createLevel(level: Level = 1, random = Math.random): GameState {
     visibility = shuffle([...Array<boolean>(clues).fill(true), ...Array<boolean>(totalTiles - clues).fill(false)], random)
   }
   return resetGeneratedLevel(scrambled, level, visibility)
+}
+
+function isLocalDevelopment(): boolean {
+  return typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+}
+
+/** A reproducible RNG for generation tests, diagnostics, and bug reports. */
+export function seededRandom(seed: number): () => number {
+  let value = seed >>> 0
+  return () => {
+    value = (value * 1664525 + 1013904223) >>> 0
+    return value / 4294967296
+  }
+}
+
+export function evaluatePuzzleQuality(state: GameState, level: Level = state.level): PuzzleQuality {
+  const lanes = state.columns.slice(1).filter((column) => column.some(Boolean))
+  const populatedItems = lanes.flatMap((column) => column.filter((item): item is Tile => Boolean(item)))
+  const typeCounts = new Map<TileType, number>()
+  const columnsByType = new Map<TileType, number>()
+  let longestSameTypeRun = 0
+  let revealPredictability = 0
+  let diversityTotal = 0
+  let preSolvedTiles = 0
+
+  lanes.forEach((column, laneIndex) => {
+    const types = column.filter((item): item is Tile => Boolean(item))
+    diversityTotal += new Set(types.map((item) => item.type)).size
+    const target = state.columnTypes[laneIndex + 1]
+    preSolvedTiles += types.filter((item) => target && item.type === target).length
+    let run = 0
+    let hiddenRun = 0
+    let previous: TileType | null = null
+    let previousHidden = false
+    types.forEach((item) => {
+      typeCounts.set(item.type, (typeCounts.get(item.type) ?? 0) + 1)
+      if (item.type === previous) run += 1
+      else run = 1
+      longestSameTypeRun = Math.max(longestSameTypeRun, run)
+      if (item.hidden && previousHidden && item.type === previous) hiddenRun += 1
+      else hiddenRun = item.hidden ? 1 : 0
+      revealPredictability = Math.max(revealPredictability, hiddenRun)
+      previous = item.type
+      previousHidden = item.hidden
+    })
+    new Set(types.map((item) => item.type)).forEach((type) => columnsByType.set(type, (columnsByType.get(type) ?? 0) + 1))
+  })
+
+  const maxGroupConcentration = Math.max(0, ...Array.from(typeCounts, ([type, count]) => {
+    const largestColumnCount = Math.max(...lanes.map((column) => column.filter((item) => item?.type === type).length), 0)
+    return largestColumnCount / count
+  }))
+  const averageColumnDiversity = lanes.length ? diversityTotal / lanes.length : 0
+  const distributionScore = typeCounts.size && lanes.length
+    ? Array.from(columnsByType.values()).reduce((sum, count) => sum + count / lanes.length, 0) / typeCounts.size
+    : 0
+  const preSolvedRatio = populatedItems.length ? preSolvedTiles / populatedItems.length : 0
+  const thresholds = QUALITY_THRESHOLDS[level]
+  const reasons: string[] = []
+  if (longestSameTypeRun > thresholds.maxRun) reasons.push(`same-type run ${longestSameTypeRun} > ${thresholds.maxRun}`)
+  if (maxGroupConcentration > thresholds.maxConcentration) reasons.push(`group concentration ${(maxGroupConcentration * 100).toFixed(0)}% is too high`)
+  if (averageColumnDiversity < thresholds.minDiversity) reasons.push(`average lane diversity ${averageColumnDiversity.toFixed(2)} is too low`)
+  if (distributionScore < thresholds.minDistribution) reasons.push(`type distribution ${(distributionScore * 100).toFixed(0)}% is too narrow`)
+  if (preSolvedRatio > thresholds.maxPreSolved) reasons.push(`pre-solved ratio ${(preSolvedRatio * 100).toFixed(0)}% is too high`)
+  if (revealPredictability > thresholds.maxRevealRun) reasons.push(`predictable hidden run ${revealPredictability} > ${thresholds.maxRevealRun}`)
+  const penalties = reasons.length
+  const score = Math.max(0, Math.round(100 - (
+    Math.max(0, longestSameTypeRun - thresholds.maxRun) * 12
+    + Math.max(0, maxGroupConcentration - thresholds.maxConcentration) * 60
+    + Math.max(0, thresholds.minDiversity - averageColumnDiversity) * 20
+    + Math.max(0, thresholds.minDistribution - distributionScore) * 60
+    + Math.max(0, preSolvedRatio - thresholds.maxPreSolved) * 60
+    + Math.max(0, revealPredictability - thresholds.maxRevealRun) * 12
+    + penalties * 5
+  )))
+  return { accepted: reasons.length === 0, score, longestSameTypeRun, maxGroupConcentration, averageColumnDiversity, distributionScore, preSolvedRatio, revealPredictability, reasons }
 }
 
 function shuffle<T>(items: T[], random: () => number): T[] {
@@ -82,19 +213,38 @@ function resetGeneratedLevel(state: GameState, level: Level, visibility: boolean
 }
 
 function constrainedScrambleState(initial: GameState, random: () => number): GameState {
-  // Exchange only top chunks in disjoint lane pairs. The reverse order is a legal solve path.
+  // Build three-lane alternating cycles. Every lane contains two types and
+  // alternates them all the way down, so no lane starts as a pre-built stack.
+  // Within each triplet, the cycles preserve tile counts and have a bounded
+  // legal solve path through the vacant lane.
   const columns = initial.columns.map((column) => [...column])
   const rows = columns[0].length
   const lanes = shuffle(Array.from({ length: columns.length - 1 }, (_, index) => index + 1), random)
-  for (let index = 0; index + 1 < lanes.length; index += 2) {
-    const first = lanes[index]
-    const second = lanes[index + 1]
-    const cut = 1 + Math.floor(random() * Math.max(1, rows - 1))
-    for (let row = 0; row < cut; row += 1) {
-      const item = columns[first][row]
-      columns[first][row] = columns[second][row]
-      columns[second][row] = item
-    }
+  const tilesByType = new Map<TileType, Tile[]>()
+  initial.columns.flat().forEach((item) => {
+    if (!item) return
+    const items = tilesByType.get(item.type) ?? []
+    items.push(item)
+    tilesByType.set(item.type, items)
+  })
+  for (let index = 0; index < lanes.length; index += 3) {
+    const [a, b, c] = lanes.slice(index, index + 3)
+    if (a === undefined || b === undefined || c === undefined) break
+    const types = [
+      [initial.columnTypes[b]!, initial.columnTypes[a]!],
+      [initial.columnTypes[c]!, initial.columnTypes[b]!],
+      [initial.columnTypes[a]!, initial.columnTypes[c]!],
+    ]
+    const phase = random() < 0.5 ? 0 : 1
+    ;[a, b, c].forEach((lane, laneIndex) => {
+      const pair = types[laneIndex]
+      for (let row = 0; row < rows; row += 1) {
+        const type = pair[(row + phase) % 2]
+        const item = tilesByType.get(type)?.shift()
+        if (!item) throw new Error('Later-level generator exhausted a tile bucket')
+        columns[lane][row] = item
+      }
+    })
   }
   return { ...initial, columns, selected: [], status: 'playing' }
 }
