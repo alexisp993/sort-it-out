@@ -64,31 +64,84 @@ function canSolveCycle(game: GameState, lanes: number[], maxStates: number): boo
   return false
 }
 
-function canSolveTripletCycles(game: GameState): boolean {
-  const lanesByTarget = new Map(game.columnTypes.flatMap((type, index) => type ? [[type, index] as const] : []))
-  const visited = new Set<number>()
-  for (let start = 1; start < game.columns.length; start += 1) {
-    if (visited.has(start)) continue
-    const triplet: number[] = []
-    let lane = start
-    while (!visited.has(lane) && triplet.length < 4) {
-      visited.add(lane)
-      triplet.push(lane)
-      const target = game.columnTypes[lane]
-      const foreign = game.columns[lane].find((item) => item && item.type !== target)?.type
-      const next = foreign ? lanesByTarget.get(foreign) : undefined
-      if (!next) return false
-      lane = next
-    }
-    if (triplet.length !== 3 || lane !== start) return false
-    const reduced: GameState = {
-      ...game,
-      columns: [game.columns[0], ...triplet.map((index) => game.columns[index])],
-      columnTypes: [null, ...triplet.map((index) => game.columnTypes[index])],
-    }
-    if (!canSolveVisibleBoard(reduced, 5000)) return false
+function canSolveRingCycle(game: GameState): boolean {
+  type Cell = Tile['type'] | null
+  type Board = Cell[][]
+  const rows = game.columns[0].length
+  const targetByType = new Map<Tile['type'], number>()
+  game.columnTypes.forEach((type, index) => { if (type) targetByType.set(type, index) })
+  const laneOrder: number[] = []
+  let lane = 1
+  while (!laneOrder.includes(lane)) {
+    laneOrder.push(lane)
+    const ownType = game.columnTypes[lane]
+    const foreignType = game.columns[lane].find((item) => item && item.type !== ownType)?.type
+    const nextLane = foreignType ? targetByType.get(foreignType) : undefined
+    if (nextLane === undefined) return false
+    lane = nextLane
   }
-  return visited.size === game.columns.length - 1
+  if (lane !== 1 || laneOrder.length !== game.columns.length - 1) return false
+  const targets = laneOrder.map((index) => game.columnTypes[index]!).filter(Boolean)
+  let board: Board = [[...Array<Cell>(rows).fill(null)], ...laneOrder.map((index) => game.columns[index].map((item) => item?.type ?? null))]
+  const solved = (candidate: Board) => candidate[0].every((item) => item === null)
+    && candidate.slice(1).every((column, index) => column.every((item) => item === targets[index]))
+  const addLane = (lane: number, offset: number) => ((lane - 1 + offset + targets.length) % targets.length) + 1
+  const applyCycle = (start: number, direction: -1 | 1): Board | null => {
+    let current = board.map((column) => [...column])
+    const move = (source: number, target: number, count: number): boolean => {
+      const first = current[source].findIndex(Boolean)
+      if (first < 0) return false
+      const type = current[source][first]!
+      let run = 0
+      while (first + run < rows && current[source][first + run] === type) run += 1
+      if (count > run) return false
+      const destination = current[target]
+      const top = destination.find(Boolean)
+      if (destination.filter((item) => item === null).length < count || (top && top !== type)) return false
+      const next = current.map((column) => [...column])
+      for (let offset = 0; offset < count; offset += 1) next[source][first + offset] = null
+      const slots: number[] = []
+      for (let row = rows - 1; row >= 0 && slots.length < count; row -= 1) if (next[target][row] === null) slots.push(row)
+      for (let offset = 0; offset < count; offset += 1) next[target][slots[offset]] = type
+      current = next
+      return true
+    }
+    const first = current[start].findIndex(Boolean)
+    if (first < 0) return null
+    const firstType = current[start][first]!
+    let run = 0
+    while (first + run < rows && current[start][first + run] === firstType) run += 1
+    if (!move(start, 0, run)) return null
+    for (let offset = 1; offset < targets.length; offset += 1) {
+      const source = addLane(start, direction * offset)
+      const target = addLane(source, -direction)
+      const sourceFirst = current[source].findIndex(Boolean)
+      if (sourceFirst < 0) return null
+      const sourceType = current[source][sourceFirst]!
+      let sourceRun = 0
+      while (sourceFirst + sourceRun < rows && current[source][sourceFirst + sourceRun] === sourceType) sourceRun += 1
+      if (!move(source, target, Math.min(run, sourceRun))) return null
+    }
+    if (!move(0, addLane(start, -direction), run)) return null
+    return current
+  }
+  const seen = new Set<string>()
+  const search = (candidate: Board, depth: number): boolean => {
+    if (solved(candidate)) return true
+    if (depth >= rows * 4) return false
+    const key = JSON.stringify(candidate)
+    if (seen.has(key)) return false
+    seen.add(key)
+    board = candidate
+    for (let start = 1; start < candidate.length; start += 1) {
+      for (const direction of [-1, 1] as const) {
+        const next = applyCycle(start, direction)
+        if (next && search(next, depth + 1)) return true
+      }
+    }
+    return false
+  }
+  return search(board, 0)
 }
 
 describe('sorting engine', () => {
@@ -248,7 +301,7 @@ describe('sorting engine', () => {
     expect(game.columnTypes.filter(Boolean)).toHaveLength(LEVEL_TYPES[1])
   })
 
-  it('builds later levels from varied solvable three-lane cycles', () => {
+  it('builds later levels from one varied solvable ring', () => {
     for (const level of [7, 8, 9, 10] as const) {
       const game = createLevel(level, () => 0.5)
       const topTypes = new Set(game.columns.slice(1).map((column) => column[0]?.type))
@@ -265,6 +318,17 @@ describe('sorting engine', () => {
           expect(column.filter((item) => item && !item.hidden)).toHaveLength(1)
         }
       }
+      const targetByType = new Map(game.columnTypes.map((type, index) => [type, index]))
+      const visited = new Set<number>()
+      let lane = 1
+      while (!visited.has(lane)) {
+        visited.add(lane)
+        const ownType = game.columnTypes[lane]
+        const foreignType = game.columns[lane].find((item) => item && item.type !== ownType)?.type
+        lane = foreignType ? (targetByType.get(foreignType) ?? -1) : -1
+      }
+      expect(lane).toBe(1)
+      expect(visited.size).toBe(LEVEL_TYPES[level])
     }
   })
 
@@ -322,7 +386,7 @@ describe('sorting engine', () => {
   it('preserves a legal solve path for generated later-level layouts', () => {
     for (const level of [7, 8, 9, 10] as const) {
       for (let seed = 0; seed < 12; seed += 1) {
-        const solvable = canSolveTripletCycles(createLevel(level, seededRandom(seed + level * 1000)))
+        const solvable = canSolveRingCycle(createLevel(level, seededRandom(seed + level * 1000)))
         expect(solvable).toBe(true)
       }
     }
