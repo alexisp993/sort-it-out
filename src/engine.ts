@@ -254,11 +254,13 @@ function randomizedCycleTypes(rows: number, pairs: TileType[][], random: () => n
   const midpoint = Math.floor(rows / 2)
   for (let attempt = 0; attempt < 96; attempt += 1) {
     const firstCount = Math.max(1, Math.min(rows - 1, midpoint + Math.floor(random() * 3) - 1))
+    const topChoice = random() < 0.5 ? 0 : 1
     const sequences = pairs.map((pair) => {
-      const choices = shuffle([
-        ...Array<number>(firstCount).fill(0),
-        ...Array<number>(rows - firstCount).fill(1),
+      const remaining = shuffle([
+        ...Array<number>(firstCount - (topChoice === 0 ? 1 : 0)).fill(0),
+        ...Array<number>(rows - firstCount - (topChoice === 1 ? 1 : 0)).fill(1),
       ], random)
+      const choices = [topChoice, ...remaining]
       return choices.map((choice) => pair[choice])
     })
     if (sequences.some((sequence) => sequence[0] === sequence[1] || longestTypeRun(sequence) > 2)) continue

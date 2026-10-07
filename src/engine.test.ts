@@ -251,6 +251,8 @@ describe('sorting engine', () => {
   it('builds later levels from varied solvable three-lane cycles', () => {
     for (const level of [7, 8, 9, 10] as const) {
       const game = createLevel(level, () => 0.5)
+      const topTypes = new Set(game.columns.slice(1).map((column) => column[0]?.type))
+      expect(topTypes.size).toBe(LEVEL_TYPES[level])
       for (const column of game.columns.slice(1)) {
         const types = column.flatMap((item) => item ? [item.type] : [])
         expect(new Set(types).size).toBe(2)
