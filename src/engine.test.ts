@@ -248,13 +248,13 @@ describe('sorting engine', () => {
     expect(game.columnTypes.filter(Boolean)).toHaveLength(LEVEL_TYPES[1])
   })
 
-  it('builds later levels from alternating three-lane cycles', () => {
+  it('builds later levels from varied solvable three-lane cycles', () => {
     for (const level of [7, 8, 9, 10] as const) {
       const game = createLevel(level, () => 0.5)
       for (const column of game.columns.slice(1)) {
         const types = column.flatMap((item) => item ? [item.type] : [])
         expect(new Set(types).size).toBe(2)
-        expect(types.some((type, index) => index > 0 && type === types[index - 1])).toBe(false)
+        expect(types[0]).not.toBe(types[1])
       }
       for (const column of game.columns.slice(1)) {
         const firstVisible = column.findIndex((item) => item && !item.hidden)
@@ -302,7 +302,7 @@ describe('sorting engine', () => {
     for (const level of [7, 8, 9, 10] as const) {
       const samples = Array.from({ length: 40 }, (_, seed) => evaluatePuzzleQuality(createLevel(level, seededRandom(seed + level * 1000)), level))
       expect(samples.every((quality) => quality.accepted)).toBe(true)
-      expect(Math.max(...samples.map((quality) => quality.longestSameTypeRun))).toBeLessThanOrEqual(1)
+      expect(Math.max(...samples.map((quality) => quality.longestSameTypeRun))).toBeLessThanOrEqual(2)
       expect(Math.max(...samples.map((quality) => quality.maxGroupConcentration))).toBeLessThanOrEqual(0.7)
     }
   })

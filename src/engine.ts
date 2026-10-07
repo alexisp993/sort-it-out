@@ -39,10 +39,10 @@ const QUALITY_THRESHOLDS: Record<Level, QualityThresholds> = {
   4: { maxRun: 6, maxConcentration: 1, minDiversity: 1, minDistribution: 0, maxPreSolved: 1, maxRevealRun: 6 },
   5: { maxRun: 7, maxConcentration: 1, minDiversity: 1, minDistribution: 0, maxPreSolved: 1, maxRevealRun: 7 },
   6: { maxRun: 8, maxConcentration: 1, minDiversity: 1, minDistribution: 0, maxPreSolved: 1, maxRevealRun: 8 },
-  7: { maxRun: 1, maxConcentration: 0.7, minDiversity: 1.8, minDistribution: 0.2, maxPreSolved: 0.65, maxRevealRun: 1 },
-  8: { maxRun: 1, maxConcentration: 0.7, minDiversity: 1.8, minDistribution: 0.2, maxPreSolved: 0.65, maxRevealRun: 1 },
-  9: { maxRun: 1, maxConcentration: 0.7, minDiversity: 1.8, minDistribution: 0.2, maxPreSolved: 0.65, maxRevealRun: 1 },
-  10: { maxRun: 1, maxConcentration: 0.7, minDiversity: 1.8, minDistribution: 0.2, maxPreSolved: 0.65, maxRevealRun: 1 },
+  7: { maxRun: 2, maxConcentration: 0.7, minDiversity: 1.8, minDistribution: 0.2, maxPreSolved: 0.65, maxRevealRun: 2 },
+  8: { maxRun: 2, maxConcentration: 0.7, minDiversity: 1.8, minDistribution: 0.2, maxPreSolved: 0.65, maxRevealRun: 2 },
+  9: { maxRun: 2, maxConcentration: 0.7, minDiversity: 1.8, minDistribution: 0.2, maxPreSolved: 0.65, maxRevealRun: 2 },
+  10: { maxRun: 2, maxConcentration: 0.7, minDiversity: 1.8, minDistribution: 0.2, maxPreSolved: 0.65, maxRevealRun: 2 },
 }
 
 const MAX_GENERATION_ATTEMPTS = 12
@@ -213,10 +213,9 @@ function resetGeneratedLevel(state: GameState, level: Level, visibility: boolean
 }
 
 function constrainedScrambleState(initial: GameState, random: () => number): GameState {
-  // Build three-lane alternating cycles. Every lane contains two types and
-  // alternates them all the way down, so no lane starts as a pre-built stack.
-  // Within each triplet, the cycles preserve tile counts and have a bounded
-  // legal solve path through the vacant lane.
+  // Build randomized three-lane cycles. Each cycle still has a bounded legal
+  // solve path through the vacant lane, but the two types are distributed at
+  // varied positions instead of repeating a recognizable A/B/A/B pattern.
   const columns = initial.columns.map((column) => [...column])
   const rows = columns[0].length
   const lanes = shuffle(Array.from({ length: columns.length - 1 }, (_, index) => index + 1), random)
@@ -235,11 +234,10 @@ function constrainedScrambleState(initial: GameState, random: () => number): Gam
       [initial.columnTypes[c]!, initial.columnTypes[b]!],
       [initial.columnTypes[a]!, initial.columnTypes[c]!],
     ]
-    const phase = random() < 0.5 ? 0 : 1
+    const sequences = randomizedCycleTypes(rows, types, random)
     ;[a, b, c].forEach((lane, laneIndex) => {
-      const pair = types[laneIndex]
       for (let row = 0; row < rows; row += 1) {
-        const type = pair[(row + phase) % 2]
+        const type = sequences[laneIndex][row]
         const item = tilesByType.get(type)?.shift()
         if (!item) throw new Error('Later-level generator exhausted a tile bucket')
         columns[lane][row] = item
@@ -247,6 +245,87 @@ function constrainedScrambleState(initial: GameState, random: () => number): Gam
     })
   }
   return { ...initial, columns, selected: [], status: 'playing' }
+}
+
+function randomizedCycleTypes(rows: number, pairs: TileType[][], random: () => number): TileType[][] {
+  // Keep each type count balanced across the triplet: every lane takes the
+  // same number of entries from its first pair member. This preserves the
+  // original tile pool while allowing each lane's order to vary independently.
+  const midpoint = Math.floor(rows / 2)
+  for (let attempt = 0; attempt < 96; attempt += 1) {
+    const firstCount = Math.max(1, Math.min(rows - 1, midpoint + Math.floor(random() * 3) - 1))
+    const sequences = pairs.map((pair) => {
+      const choices = shuffle([
+        ...Array<number>(firstCount).fill(0),
+        ...Array<number>(rows - firstCount).fill(1),
+      ], random)
+      return choices.map((choice) => pair[choice])
+    })
+    if (sequences.some((sequence) => sequence[0] === sequence[1] || longestTypeRun(sequence) > 2)) continue
+    if (sequences.every((sequence) => sequence.every((type, index) => index === 0 || type !== sequence[index - 1]))) continue
+    if (solvesCycleTypes(sequences, pairs.map((pair) => pair[1]), rows)) return sequences
+  }
+
+  // A deterministic RNG can repeatedly produce the same choices. Preserve a
+  // safe fallback for that case; normal gameplay uses Math.random and reaches
+  // the varied branch above.
+  const phase = random() < 0.5 ? 0 : 1
+  return pairs.map((pair) => Array.from({ length: rows }, (_, row) => pair[(row + phase) % 2]))
+}
+
+function longestTypeRun(sequence: TileType[]): number {
+  let longest = 0
+  let run = 0
+  let previous: TileType | null = null
+  sequence.forEach((type) => {
+    run = type === previous ? run + 1 : 1
+    longest = Math.max(longest, run)
+    previous = type
+  })
+  return longest
+}
+
+function solvesCycleTypes(sequences: TileType[][], targets: TileType[], rows: number): boolean {
+  type Cell = TileType | null
+  type Board = Cell[][]
+  const start: Board = [Array<Cell>(rows).fill(null), ...sequences.map((sequence) => [...sequence])]
+  const key = (board: Board) => JSON.stringify(board)
+  const solved = (board: Board) => board[0].every((item) => item === null)
+    && board.slice(1).every((column, index) => column.every((item) => item === targets[index]))
+  const queue: Board[] = [start]
+  const seen = new Set([key(start)])
+  while (queue.length && seen.size <= 20000) {
+    const board = queue.shift()!
+    if (solved(board)) return true
+    for (let source = 0; source < board.length; source += 1) {
+      const first = board[source].findIndex(Boolean)
+      if (first < 0) continue
+      const type = board[source][first]!
+      let run = 0
+      while (first + run < rows && board[source][first + run] === type) run += 1
+      for (let count = 1; count <= run; count += 1) {
+        for (let target = 0; target < board.length; target += 1) {
+          if (target === source) continue
+          const destination = board[target]
+          const top = destination.find(Boolean)
+          if (destination.filter((item) => item === null).length < count || (top && top !== type)) continue
+          const next = board.map((column) => [...column])
+          for (let offset = 0; offset < count; offset += 1) next[source][first + offset] = null
+          const slots: number[] = []
+          for (let row = rows - 1; row >= 0 && slots.length < count; row -= 1) {
+            if (next[target][row] === null) slots.push(row)
+          }
+          for (let offset = 0; offset < count; offset += 1) next[target][slots[offset]] = type
+          const nextKey = key(next)
+          if (!seen.has(nextKey)) {
+            seen.add(nextKey)
+            queue.push(next)
+          }
+        }
+      }
+    }
+  }
+  return false
 }
 
 type ScrambleMove = { first: number; second: number; firstRow: number; secondRow: number }
